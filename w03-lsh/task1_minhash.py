@@ -30,7 +30,10 @@ BOOK_HASHES = [lambda r: (r + 1) % 5, lambda r: (3 * r + 1) % 5]
 
 def jaccard(a, b):
     """|a and b| / |a or b|. Empty union is 0, not an error."""
-    raise NotImplementedError("jaccard similarity")
+    union = a | b
+    if not union: 
+        return 0
+    return len(a&b) / len(union)
 
 
 def minhash_signatures(columns, hashes, n_rows):
@@ -48,8 +51,21 @@ def minhash_signatures(columns, hashes, n_rows):
     written something correct that does not survive a dataset that does not fit
     in memory, and not fitting in memory is what this course is about.
     """
-    raise NotImplementedError("signature matrix")
+    n_cols = len(columns)
+    n_hashes = len(hashes)
+    INF = float('inf')
+    sig = [[INF] * n_cols for _ in range(n_hashes)]
 
+
+    for r in range(n_rows):
+        row_hashes = [h(r) for h in hashes]
+        for c, col in enumerate(columns):
+            if r in col:
+                for hi, hv in enumerate(row_hashes):
+                    if hv < sig[hi][c]:
+                        sig[hi][c] = hv
+
+    return [[sig[hi][c] for hi in range(n_hashes)] for c in range(n_cols)]
 
 def lsh_candidates(signatures, bands):
     """Split each signature into `bands` bands and hash each band.
@@ -60,7 +76,27 @@ def lsh_candidates(signatures, bands):
     The signature length must divide evenly by `bands`, or you have to decide
     what to do with the remainder. Say what you decided.
     """
-    raise NotImplementedError("LSH candidate pairs")
+    n_hashes = len(signatures[0]) if signatures else 0
+    rows_per_band = n_hashes // bands  # R5: 나머지 행은 버린다 (아래 설명)
+
+    buckets = {}
+    for col_idx, sig in enumerate(signatures):
+        for b in range(bands):
+            start = b * rows_per_band
+            end = start + rows_per_band
+            key = (b, tuple(sig[start:end]))
+            buckets.setdefault(key, []).append(col_idx)
+
+    candidates = set()
+    for members in buckets.values():
+        if len(members) < 2:
+            continue
+        for i in range(len(members)):
+            for j in range(i + 1, len(members)):
+                a, b_ = members[i], members[j]
+                candidates.add((a, b_) if a < b_ else (b_, a))
+
+    return candidates
 
 
 # ------------------------------------------------------------------- harness

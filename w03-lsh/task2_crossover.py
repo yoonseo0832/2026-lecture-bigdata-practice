@@ -16,11 +16,16 @@ from Task 1 and Task 3.
 
 Write down where it hurts. That is the deliverable.
 """
-import argparse, json, os, platform, time, tracemalloc
+import argparse, json, os, platform, random, time, tracemalloc
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, "out")
 
+
+def synthetic_docs(n, seed=246):
+    import bench
+    rng = random.Random(seed)
+    return [set(rng.sample(range(bench.VOCAB), bench.SHINGLES)) for _ in range(n)]
 
 def machine():
     return {
@@ -58,7 +63,8 @@ def main():
 
     rows = []
     for n in [int(x) for x in a.sizes.split(",")]:
-        docs = bench.build()[:n]
+        ##docs = bench.build()[:n]
+        docs = synthetic_docs(n)
         sim = bench.Counter()
         _, t_brute, m_brute = timed(BruteForce(a.threshold).find, docs, sim)
         c_brute = sim.calls

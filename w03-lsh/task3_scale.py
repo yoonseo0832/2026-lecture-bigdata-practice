@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+import random
+
+_P = (1 << 61) - 1
 """Week 3 · Task 3 — Find the same pairs without comparing everything.
 
 Textbook §3.4.
@@ -35,33 +38,58 @@ class BruteForce:
 
 
 class YourFinder:
-    """Your near-duplicate finder.
+    N_HASHES = 120   # 시그니처 길이
+    BANDS = 30       # 밴드 수 -> 밴드당 4개 행 (r = n/b = 4)
 
-        __init__(threshold)
-        find(docs, similarity) -> {(i, j), ...}
+    def __init__(self, threshold, n_hashes=None, bands=None, seed=1234):
+        self.threshold = threshold
+        self.n_hashes = n_hashes or self.N_HASHES
+        self.bands = bands or self.BANDS
+        if self.n_hashes % self.bands != 0:
+            raise ValueError("n_hashes must divide evenly by bands")
+        self.rows_per_band = self.n_hashes // self.bands
 
-    `similarity(a, b)` is the only way to compare two documents, and every call
-    is counted. Everything else - signatures, banding, bucketing - is free, in
-    the sense that the harness does not charge you for it. That is deliberate:
-    it is also roughly true at scale, where the comparison is the expensive
-    part and the hashing is linear.
+        # 매번 같은 해시 함수를 쓰도록 시드 고정 (재현 가능하게)
+        rng = random.Random(seed)
+        self._coeffs = [(rng.randrange(1, _P), rng.randrange(0, _P))
+                         for _ in range(self.n_hashes)]
 
-    Two knobs decide everything:
+    def _signature(self, doc):
+        """문서 하나의 minhash 시그니처. 이 문서의 shingle만 한 번씩 훑는다."""
+        sig = [_P] * self.n_hashes
+        for x in doc:
+            for hi, (a, b) in enumerate(self._coeffs):
+                v = (a * x + b) % _P
+                if v < sig[hi]:
+                    sig[hi] = v
+        return sig
 
-        the number of hashes in a signature
-        how many bands you split it into
+    def _candidates(self, docs):
+        """LSH 밴딩: 같은 (밴드, 밴드 구간 값)을 가진 문서끼리 버킷에 모은다.
+        similarity()를 전혀 호출하지 않으므로 harness가 비용을 안 매긴다."""
+        buckets = {}
+        for idx, doc in enumerate(docs):
+            sig = self._signature(doc)
+            for band in range(self.bands):
+                start = band * self.rows_per_band
+                end = start + self.rows_per_band
+                key = (band, tuple(sig[start:end]))
+                buckets.setdefault(key, []).append(idx)
 
-    §3.4.2 gives you the relationship between those and the probability that a
-    pair at similarity s becomes a candidate. It is an S-curve, and where its
-    step sits is something you choose. Choose it on purpose and be able to say
-    why in observation.md - a threshold of 0.8 does not mean bands should be
-    anything in particular until you have done the arithmetic.
-
-    You may reuse your Task 1 code.
-    """
-
-    def __init__(self, threshold):
-        raise NotImplementedError("write your finder")
+        cands = set()
+        for members in buckets.values():
+            if len(members) < 2:
+                continue
+            for i in range(len(members)):
+                for j in range(i + 1, len(members)):
+                    a, b = members[i], members[j]
+                    cands.add((a, b) if a < b else (b, a))
+        return cands
 
     def find(self, docs, similarity):
-        raise NotImplementedError
+        """LSH로 후보만 추리고, 후보만 실제 similarity()로 확인한다."""
+        out = set()
+        for i, j in self._candidates(docs):
+            if similarity(docs[i], docs[j]) >= self.threshold:
+                out.add((i, j))
+        return out
