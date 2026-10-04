@@ -75,8 +75,44 @@ class YourAlgorithm:
         observation.md asks about it
     """
 
-    def __init__(self, support):
-        raise NotImplementedError("write your algorithm")
+    def __init__(self, support, num_buckets=1_000_003):
+        self.support = support
+        self.num_buckets = num_buckets
+        self.peak_counters = 0
+
+    def _bucket(self, a, b):
+        lo, hi = (a, b) if a < b else (b, a)
+        return hash((lo, hi)) % self.num_buckets
 
     def run(self, baskets):
-        raise NotImplementedError
+        # pass 1: one counter per item, plus the bucket array (not pair
+        # counters - this is what the spare memory in pass one buys)
+        item_counts = Counter()
+        bucket_counts = [0] * self.num_buckets
+        for basket in baskets:
+            item_counts.update(basket)
+            items = sorted(basket)
+            for a, b in combinations(items, 2):
+                bucket_counts[self._bucket(a, b)] += 1
+
+        frequent_items = {i for i, c in item_counts.items() if c >= self.support}
+
+        # collapse counts to a bitmap before pass two - the integer array
+        # is dropped, only one bit per bucket survives
+        frequent_buckets = bytearray(
+            1 if c >= self.support else 0 for c in bucket_counts)
+        del bucket_counts
+
+        # pass 2: only count a pair if both items are frequent AND its
+        # bucket was frequent. A frequent bucket can still hold infrequent
+        # pairs (hash collisions), so this is a filter, not an answer.
+        pair_counts = Counter()
+        for basket in baskets:
+            items = sorted(basket & frequent_items)
+            for a, b in combinations(items, 2):
+                if frequent_buckets[self._bucket(a, b)]:
+                    pair_counts[(a, b)] += 1
+            self.peak_counters = max(self.peak_counters, len(pair_counts))
+
+        return {frozenset(p): c for p, c in pair_counts.items()
+                if c >= self.support}

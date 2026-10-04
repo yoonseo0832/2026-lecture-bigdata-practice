@@ -14,6 +14,7 @@ smaller second pass, and the whole chapter is consequences of that trade.
     python3 task1_apriori.py --verify
 """
 import argparse
+from collections import Counter
 from itertools import combinations
 
 # Small enough to check by hand. support threshold 3 unless stated.
@@ -30,7 +31,10 @@ BASKETS = [
 
 def frequent_singletons(baskets, support):
     """Items appearing in at least `support` baskets. Return {item: count}."""
-    raise NotImplementedError("pass one")
+    counts = Counter()
+    for basket in baskets:
+        counts.update(basket)
+    return {item: c for item, c in counts.items() if c >= support}
 
 
 def frequent_pairs(baskets, support):
@@ -44,7 +48,15 @@ def frequent_pairs(baskets, support):
     A-Priori exists to avoid, and it will pass this harness while failing the
     point. Task 3 measures whether you actually did it.
     """
-    raise NotImplementedError("pass two")
+    frequent_items = set(frequent_singletons(baskets, support))
+
+    pair_counts = Counter()
+    for basket in baskets:
+        items = sorted(basket & frequent_items)
+        for pair in combinations(items, 2):
+            pair_counts[pair] += 1
+
+    return {frozenset(p): c for p, c in pair_counts.items() if c >= support}
 
 
 def association_rules(baskets, support, min_confidence):
@@ -60,7 +72,22 @@ def association_rules(baskets, support, min_confidence):
     rule with high confidence and lift near 1 tells you nothing - the consequent
     was common anyway - and §6.1.3 is about why that matters more than it looks.
     """
-    raise NotImplementedError("rules")
+    singles = frequent_singletons(baskets, support)
+    pairs = frequent_pairs(baskets, support)
+    n = len(baskets)
+
+    rules = []
+    for pair, pair_count in pairs.items():
+        i, j = tuple(pair)
+        for antecedent, consequent in ((i, j), (j, i)):
+            confidence = pair_count / singles[antecedent]
+            if confidence < min_confidence:
+                continue
+            lift = confidence / (singles[consequent] / n)
+            rules.append((antecedent, consequent, confidence, lift))
+
+    rules.sort(key=lambda r: r[2], reverse=True)
+    return rules
 
 
 # ------------------------------------------------------------------- harness
