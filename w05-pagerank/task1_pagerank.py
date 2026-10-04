@@ -25,24 +25,31 @@ SPIDER_TRAP = {"A": ["B"], "B": ["C"], "C": ["D"], "D": ["C"]}
 
 
 def pagerank(graph, beta=0.85, iterations=100, tol=1e-10):
-    """Rank every node. Return {node: rank}, summing to 1.
+    nodes = list(graph)
+    n = len(nodes)
+    r = {v: 1.0 / n for v in nodes}
 
-    `beta` is the probability the surfer follows a link. With probability
-    1 - beta they teleport to a node chosen uniformly.
+    for i in range(1, iterations + 1):
+        nr = {v: (1 - beta) / n for v in nodes}
+        for v in nodes:
+            outs = graph[v]
+            if outs:
+                share = beta * r[v] / len(outs)
+                for w in outs:
+                    nr[w] += share
+            else:
+                # dead end: redistribute its rank to everyone, not drop it
+                share = beta * r[v] / n
+                for w in nodes:
+                    nr[w] += share
 
-    You have to handle both of these, and the textbook handles them the same way:
+        delta = sum(abs(nr[v] - r[v]) for v in nodes)
+        r = nr
+        if delta < tol:
+            break
 
-      dead ends    a node with no out-links. Where does its rank go, and where
-                   should it go instead?
-      spider traps a group of nodes that only link to each other. Without
-                   teleporting, they end up with all of it
-
-    Stop early when the ranks stop moving - `tol` is the L1 change below which
-    you should call it converged. Return the ranks, and set `pagerank.iterations`
-    to how many you actually used, because Task 2 measures that.
-    """
-    raise NotImplementedError("implement PageRank")
-
+    pagerank.iterations = i
+    return r
 
 def pagerank_no_teleport(graph, iterations=100):
     """The broken version: beta = 1, no teleporting. Build this too.
@@ -50,7 +57,23 @@ def pagerank_no_teleport(graph, iterations=100):
     It exists so you can watch both failures happen rather than take them on
     trust. The harness checks that it really does fail.
     """
-    raise NotImplementedError("implement the broken version")
+    nodes = list(graph)
+    n = len(nodes)
+    r = {v: 1.0 / n for v in nodes}
+
+    for _ in range(iterations):
+        nr = {v: 0.0 for v in nodes}
+        for v in nodes:
+            outs = graph[v]
+            if outs:
+                share = r[v] / len(outs)
+                for w in outs:
+                    nr[w] += share
+            # dead end: r[v] is simply dropped, nowhere to go
+        r = nr
+
+    pagerank_no_teleport.iterations = iterations
+    return r
 
 
 # ------------------------------------------------------------------- harness
