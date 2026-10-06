@@ -65,13 +65,28 @@ class YourFilter:
     """
 
     def __init__(self, n_bits, seed=246):
-        raise NotImplementedError("write your filter")
+        import math
+        self.n_bits = n_bits
+        self.seed = seed
+        # NaiveFilter wastes 8x memory (1 byte per "bit"). We use true bit-packing,
+        # so m = n_bits bits stored in n_bits//8 bytes.
+        # The harness fixes m/n = 10; optimal k = (m/n)*ln2 = 10*ln2 ≈ 6.93 → 7.
+        self.k = round((n_bits / (n_bits // 10)) * math.log(2))
+        self.bits = bytearray((n_bits + 7) // 8)
+
+    def _indexes(self, item):
+        d = hashlib.blake2b(str(item).encode(), digest_size=16,
+                            key=str(self.seed).encode()).digest()
+        h1 = int.from_bytes(d[:8], "big")
+        h2 = int.from_bytes(d[8:], "big") | 1
+        return [(h1 + i * h2) % self.n_bits for i in range(self.k)]
 
     def add(self, item):
-        raise NotImplementedError
+        for i in self._indexes(item):
+            self.bits[i >> 3] |= 1 << (i & 7)
 
     def __contains__(self, item):
-        raise NotImplementedError
+        return all(self.bits[i >> 3] & (1 << (i & 7)) for i in self._indexes(item))
 
     def memory_bits(self):
-        raise NotImplementedError
+        return self.n_bits

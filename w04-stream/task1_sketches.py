@@ -13,7 +13,7 @@ approximating.
 
     python3 task1_sketches.py --verify
 """
-import argparse, random
+import argparse, random, hashlib, math
 
 
 class BloomFilter:
@@ -28,13 +28,22 @@ class BloomFilter:
     """
 
     def __init__(self, m, k, seed=246):
-        raise NotImplementedError("write the Bloom filter")
+        self.m, self.k, self.seed = m, k, seed
+        self.bits = bytearray((m + 7) // 8)
 
+    def _indexes(self, item):
+        d = hashlib.blake2b(str(item).encode(), digest_size=16,
+                            key=str(self.seed).encode()).digest()
+        h1 = int.from_bytes(d[:8], "big")
+        h2 = int.from_bytes(d[8:], "big") | 1
+        return [(h1 + i * h2) % self.m for i in range(self.k)]
+    
     def add(self, item):
-        raise NotImplementedError
+        for i in self._indexes(item):
+            self.bits[i >> 3] |= 1 << (i & 7)
 
     def __contains__(self, item):
-        raise NotImplementedError
+        return all(self.bits[i >> 3] & (1 << (i & 7)) for i in self._indexes(item))
 
     def expected_fp_rate(self, n_inserted):
         """The textbook's predicted false-positive rate after n insertions.
@@ -42,45 +51,67 @@ class BloomFilter:
         §4.4.2 derives it. Return the number, do not measure it - the harness
         measures separately and compares the two.
         """
-        raise NotImplementedError
+        return (1.0 - math.exp(-self.k * n_inserted / self.m)) ** self.k
+
+
+_PHI = 0.79   # R=최대 trailing zeros → 2^R이 n의 ~1.26배 → 0.79를 "곱한다"
 
 
 def flajolet_martin(stream, n_hashes=64, seed=246):
-    """Estimate how many DISTINCT items went past, in almost no memory.
+    """구별 원소 수 추정. 상태 = 정수 n_hashes개 (스트림 길이와 무관)."""
+    R = fm_registers(stream, n_hashes, seed)
+    return fm_combine(R, "geometric")
 
-    §4.5. Hash each item, count trailing zeros in the hash, keep the maximum.
-    A maximum of R suggests about 2^R distinct items, because seeing R trailing
-    zeros is a 1-in-2^R event.
 
-    One hash gives an estimate with enormous variance, so you use many and
-    combine them. How you combine them matters a great deal:
+def fm_registers(stream, n_hashes=64, seed=246):
+    key = str(seed).encode()
+    n_digest = (n_hashes + 15) // 16          # 64바이트 digest 1개 = 32비트 해시 16개
+    R = [0] * n_hashes
+    for item in stream:
+        b = str(item).encode()
+        for j in range(n_digest):
+            d = hashlib.blake2b(b, digest_size=64, key=key,
+                                salt=bytes([j])).digest()
+            base = j * 16
+            for t in range(min(16, n_hashes - base)):
+                x = int.from_bytes(d[4 * t:4 * t + 4], "little")
+                if x:
+                    tz = (x & -x).bit_length() - 1     # trailing zeros
+                    if tz > R[base + t]:
+                        R[base + t] = tz
+    return R
 
-      * averaging 2^R directly is dominated by whichever hash got lucky - the
-        values are exponential, so one outlier swamps the rest
-      * the median is robust but can only ever be a power of two
-      * §4.5.3 suggests grouping, and combining twice
 
-    The harness accepts anything **within a factor of two** of the truth. That is
-    not a generous tolerance, it is an honest one: this method really is that
-    crude, and HyperLogLog exists because of it. Getting inside a factor of two
-    reliably is the requirement; getting closer than that is not expected here.
-
-    Return your estimate as a float.
-    """
-    raise NotImplementedError("write Flajolet-Martin")
+def fm_combine(R, rule="geometric", groups=8):
+    est = [2.0 ** r for r in R]
+    if rule == "mean":
+        return sum(est) / len(est) * _PHI
+    if rule == "median":
+        s = sorted(est); mid = len(s) // 2
+        return (s[mid] if len(s) % 2 else (s[mid - 1] + s[mid]) / 2) * _PHI
+    if rule == "group_median":                 # §4.5.3: 그룹 평균 → 중앙값
+        size = len(est) // groups
+        avgs = sorted(sum(est[g * size:(g + 1) * size]) / size for g in range(groups))
+        mid = groups // 2
+        med = avgs[mid] if groups % 2 else (avgs[mid - 1] + avgs[mid]) / 2
+        return med * _PHI
+    if rule == "geometric":                    # 지수 R을 평균한 뒤 2^평균
+        return 2.0 ** (sum(R) / len(R)) * _PHI
+    raise ValueError(rule)
 
 
 def reservoir_sample(stream, k, seed=246):
-    """Keep k items uniformly at random from a stream of unknown length.
-
-    §4.3. Every item that went past must end up with the same probability k/n
-    of being in your sample, and you only ever hold k of them.
-
-    Return a list of k items (or fewer if the stream was shorter).
-    """
-    raise NotImplementedError("write reservoir sampling")
-
-
+    """길이를 모르는 스트림에서 k개를 균등하게 뽑는다."""
+    rng = random.Random(seed)
+    sample = []
+    for i, item in enumerate(stream):          # i = 이 항목 이전에 본 개수
+        if i < k:
+            sample.append(item)                # 앞 k개는 그냥 채운다
+        else:
+            j = rng.randrange(i + 1)           # ← 길이를 몰라도 되는 부분
+            if j < k:
+                sample[j] = item               # 확률 k/(i+1)로 무작위 슬롯 교체
+    return sample
 # ------------------------------------------------------------------- harness
 def verify():
     fails = 0
