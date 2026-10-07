@@ -69,3 +69,25 @@
   bucket collects enough hash collisions to clear the support threshold
   on its own, so pass two filters out nothing at all. A bucket array
   below some size for this data is not a weak filter, it is no filter.
+
+# Task 4 (optional)
+
+- A6: 전역적으로 빈발한 쌍이 모든 청크에서 누락될 수 없는 이유 — 귀류법.
+  어떤 쌍 {a,b}가 전체 N개 바스켓 중 support s 이상 등장한다고 하자.
+  모든 청크에서 빈발하지 않다고 가정하면, 각 청크 i에서 {a,b}의 등장
+  횟수 < s·|chunk_i|/N이다. 전체 합산하면 Σ < s·Σ|chunk_i|/N = s,
+  이는 전체 등장 횟수 ≥ s와 모순. 따라서 최소 한 청크에서 빈발.
+- A5: chunks를 바꿨을 때의 결과:
+  - 4 chunks → candidates 9,876, pairs 6,397
+  - 8 chunks → candidates 14,201, pairs 6,397
+  - 16 chunks → candidates 24,418, pairs 6,397
+  candidates(후보 수)는 chunk가 많아질수록 증가하고, pairs(최종 답)는
+  변하지 않는다. 청크가 작아지면 scaled threshold가 낮아져 각 청크에서
+  더 많은 쌍이 "지역 빈발"로 잡히지만, pass two가 전역 support로
+  걸러내므로 최종 답은 동일하다.
+- SON이 여기서 21× 느리지만 올바른 알고리즘인 이유: 이 데이터는 한
+  머신에 들어가지만 현실의 바스켓 데이터(수십억 거래)는 그렇지 않다.
+  PlainApriori/PCY는 전체 데이터가 메모리에 있어야 하지만 SON은 각
+  청크를 독립적으로 처리할 수 있어 MapReduce로 병렬화 가능하다.
+  데이터가 한 머신에 안 들어가면 빠른 단일머신 알고리즘은 아예
+  실행 불가능하므로, 느려도 돌아가는 SON이 유일한 선택이다.
